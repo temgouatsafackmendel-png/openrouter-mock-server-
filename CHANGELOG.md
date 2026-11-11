@@ -5,6 +5,15 @@ Ce projet respecte le format [Keep a Changelog](https://keepachangelog.com/fr/1.
 
 ---
 
+## [1.2.0] - 2026-11-11 — Mendel Temgoua
+
+### Amélioré (Interface & Expérience Utilisateur)
+- **Fil de Conversation Continu & Raccourcis Clavier** : Envoi instantané avec la touche `Entrée`, interruption à la volée d'une génération en cours et bouton de **basculement immédiat sur un modèle de secours** lorsqu'un aléa est simulé.
+- **Comparateur Enrichi** : Indicateur automatique du modèle le plus rapide, permutation rapide des deux modèles et reprise en un clic de la meilleure réponse dans le simulateur.
+- **Indicateur de Progression & Export Lisible** : Suivi visuel étape par étape dans la vue *Résilience* et filtres par état avec export de rapport synthétique dans *Activité*.
+
+---
+
 ## [1.1.0] - 2026-11-11 — Mendel Temgoua
 
 ### Ajouté

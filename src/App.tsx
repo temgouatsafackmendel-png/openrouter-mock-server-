@@ -22,6 +22,10 @@ import {
   Check,
   Columns2,
   Search,
+  Square,
+  ArrowLeftRight,
+  Download,
+  Plus,
 } from 'lucide-react';
 
 interface ActivityEntry {
@@ -61,35 +65,54 @@ interface ComparisonSlotResult {
   isPending: boolean;
 }
 
+interface ConversationTurn {
+  id: string;
+  prompt: string;
+  modelId: string;
+  modelLabel: string;
+  provider: string;
+  status: 'success' | 'warning' | 'error';
+  answer: string;
+  notice?: string;
+  durationMs: number | null;
+  timestamp: string;
+}
+
 type ActiveView = 'simulator' | 'compare' | 'resilience' | 'activity';
 type SimulationBehavior = 'nominal' | 'rate_limit' | 'provider_down' | 'slow_network';
 type ResponseStyle = 'default' | 'reasoning' | 'code';
+type ActivityFilter = 'all' | 'ok' | 'incident';
 
 const MODEL_OPTIONS = [
   {
     id: 'anthropic/claude-3.7-sonnet',
     label: 'Claude 3.7 Sonnet',
     provider: 'Anthropic',
+    fallbackId: 'openai/gpt-4o',
   },
   {
     id: 'openai/gpt-4o',
     label: 'GPT-4o',
     provider: 'OpenAI',
+    fallbackId: 'anthropic/claude-3.7-sonnet',
   },
   {
     id: 'deepseek/deepseek-r1',
     label: 'DeepSeek R1',
     provider: 'Fireworks',
+    fallbackId: 'anthropic/claude-3.7-sonnet',
   },
   {
     id: 'mistralai/mistral-large-2411',
     label: 'Mistral Large',
     provider: 'Mistral',
+    fallbackId: 'openai/gpt-4o',
   },
   {
     id: 'meta-llama/llama-3.3-70b-instruct',
     label: 'Llama 3.3 70B',
     provider: 'Together AI',
+    fallbackId: 'openai/gpt-4o',
   },
 ];
 
@@ -128,13 +151,12 @@ export default function App() {
   const [customDelayMs, setCustomDelayMs] = useState<number>(80);
   const [promptText, setPromptText] = useState<string>(QUICK_PROMPTS[0].text);
 
-  // Response state
+  // Conversation Thread & Active Streaming state
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [responseText, setResponseText] = useState<string>('');
-  const [responseStatus, setResponseStatus] = useState<'idle' | 'success' | 'warning' | 'error'>('idle');
-  const [responseNotice, setResponseNotice] = useState<string>('');
-  const [responseDurationMs, setResponseDurationMs] = useState<number | null>(null);
-  const [copiedAnswer, setCopiedAnswer] = useState<boolean>(false);
+  const [conversation, setConversation] = useState<ConversationTurn[]>([]);
+  const [streamingAnswer, setStreamingAnswer] = useState<string>('');
+  const [streamingPrompt, setStreamingPrompt] = useState<string>('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Dual-Model Compare state
   const [modelLeft, setModelLeft] = useState<string>(MODEL_OPTIONS[0].id);
@@ -168,6 +190,7 @@ export default function App() {
   // Activity history state
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [activitySearch, setActivitySearch] = useState<string>('');
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all');
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -199,23 +222,40 @@ export default function App() {
       .trim();
   };
 
-  const getModelLabel = (modelId: string): string => {
-    return MODEL_OPTIONS.find((m) => m.id === modelId)?.label || modelId;
+  const getModelInfo = (modelId: string) => {
+    return (
+      MODEL_OPTIONS.find((m) => m.id === modelId) || {
+        id: modelId,
+        label: modelId,
+        provider: 'OpenRouter',
+        fallbackId: MODEL_OPTIONS[1].id,
+      }
+    );
   };
 
-  const handleCopyResponse = () => {
-    if (!responseText) return;
-    navigator.clipboard.writeText(responseText);
-    setCopiedAnswer(true);
-    setTimeout(() => setCopiedAnswer(false), 1800);
+  const handleCopyText = (id: string, text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1800);
   };
 
-  const runSimulation = async (
-    overrideBehavior?: SimulationBehavior,
-    overridePrompt?: string
-  ) => {
-    const activeBehavior = overrideBehavior ?? behavior;
-    const activePrompt = (overridePrompt ?? promptText).trim();
+  const stopSimulation = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsRunning(false);
+  };
+
+  const runSimulation = async (options?: {
+    overrideBehavior?: SimulationBehavior;
+    overridePrompt?: string;
+    overrideModel?: string;
+  }) => {
+    const activeBehavior = options?.overrideBehavior ?? behavior;
+    const activePrompt = (options?.overridePrompt ?? promptText).trim();
+    const activeModel = options?.overrideModel ?? selectedModel;
     if (!activePrompt) return;
 
     if (abortControllerRef.current) {
@@ -224,11 +264,10 @@ export default function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    const modelMeta = getModelInfo(activeModel);
     setIsRunning(true);
-    setResponseText('');
-    setResponseNotice('');
-    setResponseStatus('idle');
-    setResponseDurationMs(null);
+    setStreamingPrompt(activePrompt);
+    setStreamingAnswer('');
 
     const startTime = performance.now();
 
@@ -249,11 +288,11 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-mock-status': statusHeader,
           'x-mock-latency': String(latencyHeader),
-          'x-mock-chunk-delay': '22',
+          'x-mock-chunk-delay': '20',
           'x-mock-scenario': responseStyle,
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: activeModel,
           stream: statusHeader === '200',
           messages: [{ role: 'user', content: activePrompt }],
         }),
@@ -262,21 +301,26 @@ export default function App() {
 
       if (!response.ok) {
         const elapsed = Math.round(performance.now() - startTime);
-        setResponseDurationMs(elapsed);
-
-        if (response.status === 429) {
-          setResponseStatus('warning');
-          setResponseNotice(
-            'Limite de capacité simulée atteinte. Le système applique une temporisation automatique avant nouvel essai.'
-          );
-        } else {
-          setResponseStatus('error');
-          setResponseNotice(
-            'Indisponibilité temporaire du fournisseur simulée. Le basculement vers un modèle de secours peut prendre le relais.'
-          );
-        }
+        const isRateLimit = response.status === 429;
+        const turn: ConversationTurn = {
+          id: `turn-${Date.now()}`,
+          prompt: activePrompt,
+          modelId: activeModel,
+          modelLabel: modelMeta.label,
+          provider: modelMeta.provider,
+          status: isRateLimit ? 'warning' : 'error',
+          answer: '',
+          notice: isRateLimit
+            ? 'Surcharge temporaire simulée sur ce modèle. Vous pouvez relancer immédiatement sur un modèle de secours.'
+            : 'Indisponibilité simulée du fournisseur principal. Basculez en un clic sur le modèle de secours pour poursuivre.',
+          durationMs: elapsed,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        };
+        setConversation((prev) => [turn, ...prev]);
       } else if (response.body) {
-        setResponseStatus('success');
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -299,23 +343,64 @@ export default function App() {
               const delta = parsed.choices?.[0]?.delta?.content;
               if (delta) {
                 assembled += delta;
-                setResponseText(formatCleanAnswer(assembled));
+                setStreamingAnswer(formatCleanAnswer(assembled));
               }
             } catch {
               // Ignore partial chunk
             }
           }
         }
-        setResponseDurationMs(Math.round(performance.now() - startTime));
+
+        const elapsed = Math.round(performance.now() - startTime);
+        const finalClean = formatCleanAnswer(assembled);
+        const turn: ConversationTurn = {
+          id: `turn-${Date.now()}`,
+          prompt: activePrompt,
+          modelId: activeModel,
+          modelLabel: modelMeta.label,
+          provider: modelMeta.provider,
+          status: 'success',
+          answer: finalClean,
+          durationMs: elapsed,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        };
+        setConversation((prev) => [turn, ...prev]);
+        setStreamingAnswer('');
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') {
-        setResponseStatus('error');
-        setResponseNotice('La simulation a été interrompue avant la fin du délai.');
+        const turn: ConversationTurn = {
+          id: `turn-${Date.now()}`,
+          prompt: activePrompt,
+          modelId: activeModel,
+          modelLabel: modelMeta.label,
+          provider: modelMeta.provider,
+          status: 'error',
+          answer: '',
+          notice: 'La simulation a été interrompue.',
+          durationMs: Math.round(performance.now() - startTime),
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        };
+        setConversation((prev) => [turn, ...prev]);
       }
     } finally {
       setIsRunning(false);
       loadActivities();
+    }
+  };
+
+  const handleKeyDownPrompt = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isRunning) {
+        runSimulation();
+      }
     }
   };
 
@@ -384,6 +469,13 @@ export default function App() {
 
     setIsComparing(false);
     loadActivities();
+  };
+
+  const swapComparisonModels = () => {
+    setModelLeft(modelRight);
+    setModelRight(modelLeft);
+    setLeftResult(rightResult);
+    setRightResult(leftResult);
   };
 
   // Exécute un scénario visuel complet de continuité
@@ -460,7 +552,7 @@ export default function App() {
         durationMs,
       });
       setFailoverSteps([...collected]);
-      await new Promise((r) => setTimeout(r, 380));
+      await new Promise((r) => setTimeout(r, 360));
     }
 
     setIsRunningScenario(false);
@@ -489,15 +581,48 @@ export default function App() {
     setActivities([]);
   };
 
+  const handleDownloadSummaryReport = () => {
+    const lines = [
+      'RAPPORT DE SYNTHÈSE — OPENROUTER STUDIO (Mendel Temgoua)',
+      `Date : ${new Date().toLocaleString()}`,
+      `Simulations totales : ${activities.length}`,
+      '------------------------------------------------------------',
+      ...activities.map((a, idx) => {
+        const stateLabel =
+          a.statusCode >= 200 && a.statusCode < 300
+            ? 'Réponse validée'
+            : a.statusCode === 429
+              ? 'Surcharge simulée'
+              : 'Basculement requis';
+        return `${idx + 1}. [${getModelInfo(a.model).label}] ${stateLabel} (${a.latencyMs} ms) — "${a.promptPreview}"`;
+      }),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'rapport-simulations-ia.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const filteredActivities = useMemo(() => {
-    if (!activitySearch.trim()) return activities;
-    const q = activitySearch.toLowerCase();
-    return activities.filter(
-      (a) =>
-        getModelLabel(a.model).toLowerCase().includes(q) ||
-        a.promptPreview.toLowerCase().includes(q)
-    );
-  }, [activities, activitySearch]);
+    return activities.filter((a) => {
+      const isOk = a.statusCode >= 200 && a.statusCode < 300;
+      if (activityFilter === 'ok' && !isOk) return false;
+      if (activityFilter === 'incident' && isOk) return false;
+      if (activitySearch.trim()) {
+        const q = activitySearch.toLowerCase();
+        return (
+          getModelInfo(a.model).label.toLowerCase().includes(q) ||
+          a.promptPreview.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [activities, activityFilter, activitySearch]);
 
   const activitySummary = useMemo(() => {
     const total = activities.length;
@@ -508,6 +633,10 @@ export default function App() {
         : 0;
     return { total, completed, avgMs };
   }, [activities]);
+
+  const totalScenarioDurationMs = useMemo(() => {
+    return failoverSteps.reduce((acc, s) => acc + s.durationMs, 0);
+  }, [failoverSteps]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-150">
@@ -596,14 +725,14 @@ export default function App() {
         <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-8 border-b border-slate-200/80 dark:border-slate-800/80">
           <div className="space-y-2 max-w-2xl">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <span>Version 1.1</span>
+              <span>Version 1.2</span>
               <span aria-hidden="true">·</span>
-              <span>Simulation IA déterministe</span>
+              <span>Expérience interactive fluide</span>
               <span aria-hidden="true">·</span>
               <span>Réalisé par Mendel Temgoua</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-display">
-              Testez et comparez la fiabilité de vos modèles IA en temps réel
+              Simulez, comparez et éprouvez vos modèles IA en toute fluidité
             </h1>
           </div>
 
@@ -627,7 +756,7 @@ export default function App() {
         </section>
 
         {/* ===================================================================
-            VIEW 1: CLEAN INTERACTIVE SIMULATOR
+            VIEW 1: CLEAN INTERACTIVE SIMULATOR WITH CONTINUOUS THREAD UX
         =================================================================== */}
         {activeView === 'simulator' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -682,7 +811,7 @@ export default function App() {
               {/* Response Style Selection */}
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Format de réponse souhaité
+                  Ton et structure de réponse
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {(
@@ -769,7 +898,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right Column: Clean Conversation & Live Response Area */}
+            {/* Right Column: Interactive Conversation Thread & Composer */}
             <div className="lg:col-span-7 space-y-6">
               {/* Prompt Composer Card */}
               <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-4">
@@ -784,7 +913,10 @@ export default function App() {
                         type="button"
                         onClick={() => {
                           setPromptText(preset.text);
-                          runSimulation(behavior, preset.text);
+                          runSimulation({
+                            overrideBehavior: behavior,
+                            overridePrompt: preset.text,
+                          });
                         }}
                         className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                       >
@@ -798,120 +930,205 @@ export default function App() {
                   rows={3}
                   value={promptText}
                   onChange={(e) => setPromptText(e.target.value)}
-                  placeholder="Saisissez un message pour tester la réponse du modèle..."
+                  onKeyDown={handleKeyDownPrompt}
+                  placeholder="Saisissez votre message (Entrée pour envoyer)..."
                   className="w-full rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 p-4 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
                 />
 
-                <div className="flex items-center justify-between pt-1">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                   <div className="text-xs text-slate-500 dark:text-slate-400">
                     Modèle actif :{' '}
                     <strong className="font-medium text-slate-800 dark:text-slate-200">
-                      {getModelLabel(selectedModel)}
+                      {getModelInfo(selectedModel).label}
                     </strong>
+                    <span className="hidden sm:inline text-slate-400">
+                      {' '}· Appuyez sur Entrée pour envoyer
+                    </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => runSimulation()}
-                    disabled={isRunning}
-                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
-                  >
+                  <div className="flex items-center gap-2">
                     {isRunning ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Génération en cours...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Envoyer</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Clean Response Output Card */}
-              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-4 min-h-[250px] flex flex-col justify-between">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    <Sparkles className="w-4 h-4 text-blue-500" />
-                    <span>Réponse générée</span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    {responseDurationMs !== null && (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{responseDurationMs} ms</span>
-                      </div>
-                    )}
-
-                    {responseText && (
                       <button
                         type="button"
-                        onClick={handleCopyResponse}
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 cursor-pointer"
+                        onClick={stopSimulation}
+                        className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
                       >
-                        {copiedAnswer ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-500" />
-                            <span>Copié</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copier</span>
-                          </>
-                        )}
+                        <Square className="w-3.5 h-3.5" />
+                        <span>Arrêter</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => runSimulation()}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Envoyer</span>
                       </button>
                     )}
                   </div>
                 </div>
+              </div>
 
-                <div className="py-2 flex-1 flex flex-col justify-center">
-                  {responseStatus === 'idle' && !isRunning && (
-                    <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-8">
-                      Lancez une simulation pour visualiser le comportement du modèle en direct.
-                    </p>
-                  )}
+              {/* Conversation Thread Output */}
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-5 min-h-[280px] flex flex-col justify-between">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <Sparkles className="w-4 h-4 text-blue-500" />
+                    <span>Fil de réponses ({conversation.length})</span>
+                  </div>
 
-                  {isRunning && !responseText && (
-                    <div className="flex items-center justify-center gap-2.5 py-8 text-sm text-slate-500 dark:text-slate-400">
-                      <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
-                      <span>Traitement de la demande...</span>
-                    </div>
-                  )}
-
-                  {responseStatus === 'success' && responseText && (
-                    <div className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                      {responseText}
-                    </div>
-                  )}
-
-                  {(responseStatus === 'warning' || responseStatus === 'error') && (
-                    <div
-                      className={`p-4 rounded-xl border flex items-start gap-3 ${
-                        responseStatus === 'warning'
-                          ? 'bg-amber-50/70 dark:bg-amber-950/25 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200'
-                          : 'bg-rose-50/70 dark:bg-rose-950/25 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200'
-                      }`}
+                  {conversation.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setConversation([])}
+                      className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
                     >
-                      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-                      <div className="space-y-1 text-xs leading-relaxed">
-                        <div className="font-semibold text-sm">
-                          {responseStatus === 'warning'
-                            ? 'Simulation de surcharge activée'
-                            : 'Simulation d’indisponibilité activée'}
-                        </div>
-                        <p>{responseNotice}</p>
-                      </div>
-                    </div>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Nouvelle session</span>
+                    </button>
                   )}
                 </div>
 
+                <div className="space-y-4 flex-1 flex flex-col justify-center">
+                  {/* Live streaming turn preview */}
+                  {isRunning && (
+                    <div className="p-4 rounded-xl border border-blue-500/40 bg-blue-50/30 dark:bg-blue-950/20 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-2">
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>{getModelInfo(selectedModel).label} rédige une réponse...</span>
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        « {streamingPrompt} »
+                      </p>
+                      {streamingAnswer && (
+                        <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/70 text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                          {streamingAnswer}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!isRunning && conversation.length === 0 && (
+                    <div className="text-center py-10 space-y-2">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Envoyez une demande ou choisissez un exemple ci-dessus pour démarrer la session.
+                      </p>
+                    </div>
+                  )}
+
+                  {conversation.map((turn) => {
+                    const fallbackModel = getModelInfo(turn.modelId);
+                    const nextModelInfo = getModelInfo(fallbackModel.fallbackId);
+
+                    return (
+                      <div
+                        key={turn.id}
+                        className="p-5 rounded-xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/60 dark:bg-slate-950/50 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900 dark:text-white">
+                              {turn.modelLabel}
+                            </span>
+                            <span aria-hidden="true" className="text-slate-400">
+                              ·
+                            </span>
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {turn.provider}
+                            </span>
+                            <span aria-hidden="true" className="text-slate-400">
+                              ·
+                            </span>
+                            <span className="text-slate-400 tabular-nums">
+                              {turn.timestamp}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {turn.durationMs !== null && (
+                              <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 tabular-nums">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{turn.durationMs} ms</span>
+                              </span>
+                            )}
+                            {turn.answer && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(turn.id, turn.answer)}
+                                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
+                              >
+                                {copiedId === turn.id ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-500" />
+                                    <span>Copié</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3" />
+                                    <span>Copier</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Demande : « {turn.prompt} »
+                        </div>
+
+                        {turn.status === 'success' ? (
+                          <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/70 text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            {turn.answer}
+                          </div>
+                        ) : (
+                          <div
+                            className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                              turn.status === 'warning'
+                                ? 'bg-amber-50/70 dark:bg-amber-950/25 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200'
+                                : 'bg-rose-50/70 dark:bg-rose-950/25 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200'
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <div className="space-y-1 text-xs leading-relaxed">
+                                <div className="font-semibold">
+                                  {turn.status === 'warning'
+                                    ? 'Surcharge détectée sur ce modèle'
+                                    : 'Fournisseur principal indisponible'}
+                                </div>
+                                <p>{turn.notice}</p>
+                              </div>
+                            </div>
+
+                            {/* One-click instant failover recovery button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedModel(nextModelInfo.id);
+                                setBehavior('nominal');
+                                runSimulation({
+                                  overrideBehavior: 'nominal',
+                                  overrideModel: nextModelInfo.id,
+                                  overridePrompt: turn.prompt,
+                                });
+                              }}
+                              className="px-3.5 py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-semibold hover:opacity-90 transition-opacity shrink-0 self-start sm:self-center cursor-pointer whitespace-nowrap"
+                            >
+                              Basculer sur {nextModelInfo.label}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-                  <span>{getModelLabel(selectedModel)}</span>
+                  <span>Session interactive</span>
                   <button
                     type="button"
                     onClick={() => setActiveView('compare')}
@@ -927,7 +1144,7 @@ export default function App() {
         )}
 
         {/* ===================================================================
-            VIEW 2: DUAL-MODEL SIDE-BY-SIDE COMPARATOR (NEW IN v1.1)
+            VIEW 2: ENHANCED DUAL-MODEL COMPARATOR
         =================================================================== */}
         {activeView === 'compare' && (
           <div className="space-y-6">
@@ -943,24 +1160,36 @@ export default function App() {
                   </h2>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={runSideBySideComparison}
-                  disabled={isComparing}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-2 self-start cursor-pointer"
-                >
-                  {isComparing ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Comparaison en cours...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5" />
-                      <span>Comparer les deux modèles</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2 self-start">
+                  <button
+                    type="button"
+                    onClick={swapComparisonModels}
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer"
+                    title="Inverser les deux modèles"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    <span>Inverser</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={runSideBySideComparison}
+                    disabled={isComparing}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+                  >
+                    {isComparing ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Comparaison...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Comparer les deux modèles</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1009,48 +1238,103 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
               {[
-                { slot: leftResult, selectedId: modelLeft },
-                { slot: rightResult, selectedId: modelRight },
-              ].map(({ slot, selectedId }, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 flex flex-col justify-between min-h-[220px] space-y-4"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {getModelLabel(selectedId)}
-                    </span>
-                    {slot.durationMs !== null && (
-                      <span className="text-xs font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
-                        {slot.durationMs} ms
-                      </span>
-                    )}
-                  </div>
+                { slot: leftResult, selectedId: modelLeft, otherDuration: rightResult.durationMs },
+                { slot: rightResult, selectedId: modelRight, otherDuration: leftResult.durationMs },
+              ].map(({ slot, selectedId, otherDuration }, idx) => {
+                const isFaster =
+                  slot.durationMs !== null &&
+                  otherDuration !== null &&
+                  slot.durationMs <= otherDuration;
+                const modelMeta = getModelInfo(selectedId);
 
-                  <div className="flex-1 flex flex-col justify-center py-2">
-                    {slot.isPending ? (
-                      <div className="flex items-center justify-center gap-2 text-xs text-slate-500 py-8">
-                        <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
-                        <span>Génération en cours...</span>
+                return (
+                  <div
+                    key={idx}
+                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 flex flex-col justify-between min-h-[250px] space-y-4"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {modelMeta.label}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          · {modelMeta.provider}
+                        </span>
                       </div>
-                    ) : slot.text ? (
-                      <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                        {slot.text}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-slate-400 text-center py-8">
-                        Cliquez sur « Comparer les deux modèles » pour afficher le résultat.
-                      </p>
+
+                      {slot.durationMs !== null && (
+                        <div className="flex items-center gap-2 text-xs font-mono tabular-nums">
+                          {isFaster && (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium">
+                              Plus rapide ·
+                            </span>
+                          )}
+                          <span className="text-slate-600 dark:text-slate-300">
+                            {slot.durationMs} ms
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 flex flex-col justify-center py-2">
+                      {slot.isPending ? (
+                        <div className="flex items-center justify-center gap-2 text-xs text-slate-500 py-8">
+                          <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
+                          <span>Génération en cours...</span>
+                        </div>
+                      ) : slot.text ? (
+                        <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                          {slot.text}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-400 text-center py-8">
+                          Cliquez sur « Comparer les deux modèles » pour afficher le résultat.
+                        </p>
+                      )}
+                    </div>
+
+                    {slot.text && (
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(`cmp-${idx}`, slot.text)}
+                          className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {copiedId === `cmp-${idx}` ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>Copié</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copier</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedModel(selectedId);
+                            setActiveView('simulator');
+                          }}
+                          className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Poursuivre avec {modelMeta.label}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* ===================================================================
-            VIEW 3: CLEAN RESILIENCE SCENARIOS
+            VIEW 3: CLEAN RESILIENCE SCENARIOS WITH PROGRESS BAR
         =================================================================== */}
         {activeView === 'resilience' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -1087,6 +1371,22 @@ export default function App() {
                     </>
                   )}
                 </button>
+              </div>
+
+              {/* Visual Progress Bar */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>Progression du scénario de reprise</span>
+                  <span className="font-mono tabular-nums">
+                    {failoverSteps.length} / 3 étapes
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-900 overflow-hidden">
+                  <div
+                    style={{ width: `${(failoverSteps.length / 3) * 100}%` }}
+                    className="h-full bg-blue-600 transition-all duration-300"
+                  />
+                </div>
               </div>
 
               {failoverSteps.length === 0 ? (
@@ -1131,6 +1431,17 @@ export default function App() {
                       </div>
                     </div>
                   ))}
+
+                  {failoverSteps.length === 3 && (
+                    <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs text-emerald-900 dark:text-emerald-200">
+                      <span className="font-medium">
+                        Continuité de service validée avec succès sans perte de demande.
+                      </span>
+                      <span className="font-mono tabular-nums font-semibold">
+                        Total : {totalScenarioDurationMs} ms
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1225,11 +1536,10 @@ export default function App() {
         )}
 
         {/* ===================================================================
-            VIEW 4: CLEAN ACTIVITY HISTORY WITH SUMMARY & SEARCH
+            VIEW 4: CLEAN ACTIVITY HISTORY WITH FILTERS & REPORT DOWNLOAD
         =================================================================== */}
         {activeView === 'activity' && (
           <div className="space-y-6">
-            {/* Clean Summary KPI Row */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-5">
                 <div className="text-xs text-slate-500 dark:text-slate-400">
@@ -1258,37 +1568,74 @@ export default function App() {
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Filtrer par modèle ou demande..."
-                  value={activitySearch}
-                  onChange={(e) => setActivitySearch(e.target.value)}
-                  className="pl-9 pr-4 py-2 text-xs rounded-xl bg-white dark:bg-[#0F1523] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 w-72"
-                />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1 p-1 bg-white dark:bg-[#0F1523] border border-slate-200 dark:border-slate-800 rounded-xl">
+                  {(
+                    [
+                      { id: 'all', label: 'Tout' },
+                      { id: 'ok', label: 'Réponses validées' },
+                      { id: 'incident', label: 'Aléas simulés' },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setActivityFilter(f.id)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                        activityFilter === f.id
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Filtrer par modèle ou demande..."
+                    value={activitySearch}
+                    onChange={(e) => setActivitySearch(e.target.value)}
+                    className="pl-9 pr-4 py-2 text-xs rounded-xl bg-white dark:bg-[#0F1523] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 w-64"
+                  />
+                </div>
               </div>
 
               {activities.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearActivity}
-                  className="self-start sm:self-auto px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Effacer l’historique</span>
-                </button>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleDownloadSummaryReport}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-[#0F1523] border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Télécharger le bilan</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClearActivity}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Effacer</span>
+                  </button>
+                </div>
               )}
             </div>
 
             {filteredActivities.length === 0 ? (
               <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-12 text-center space-y-3">
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Aucune simulation ne correspond à votre recherche.
+                  Aucune simulation ne correspond à votre sélection.
                 </p>
                 <button
                   type="button"
                   onClick={() => {
+                    setActivityFilter('all');
                     setActivitySearch('');
                     setActiveView('simulator');
                     runSimulation();
@@ -1311,7 +1658,7 @@ export default function App() {
                       <div className="space-y-1 max-w-2xl">
                         <div className="flex items-center gap-2 text-xs">
                           <span className="font-semibold text-slate-900 dark:text-white">
-                            {getModelLabel(item.model)}
+                            {getModelInfo(item.model).label}
                           </span>
                           <span aria-hidden="true" className="text-slate-400">
                             ·
@@ -1349,7 +1696,11 @@ export default function App() {
                           setSelectedModel(item.model);
                           setPromptText(item.promptPreview);
                           setActiveView('simulator');
-                          runSimulation('nominal', item.promptPreview);
+                          runSimulation({
+                            overrideBehavior: 'nominal',
+                            overridePrompt: item.promptPreview,
+                            overrideModel: item.model,
+                          });
                         }}
                         className="self-start sm:self-center px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shrink-0 cursor-pointer"
                       >
@@ -1368,7 +1719,7 @@ export default function App() {
       <footer className="border-t border-slate-200/80 dark:border-slate-800/80 py-6 px-6 text-xs text-slate-500 mt-auto">
         <div className="max-w-[1140px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            OpenRouter Studio v1.1 · Conçu et réalisé par Mendel Temgoua
+            OpenRouter Studio v1.2 · Conçu et réalisé par Mendel Temgoua
           </div>
           <div>Licence MIT</div>
         </div>
