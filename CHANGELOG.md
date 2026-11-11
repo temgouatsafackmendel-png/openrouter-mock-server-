@@ -5,6 +5,15 @@ Ce projet respecte le format [Keep a Changelog](https://keepachangelog.com/fr/1.
 
 ---
 
+## [1.3.0] - 2026-11-11 — Mendel Temgoua
+
+### Ajouté & Amélioré (Identité Visuelle, Typographie & Iconographie)
+- **Système Typographique Éditorial** : Intégration du duo **Bricolage Grotesque** (titres et structure) + **Plus Jakarta Sans** (interface et lecture fluide) + **JetBrains Mono** (métriques tabulaires).
+- **Illustrations Architecturales Haute Résolution** : Bannière visuelle interactive dans l'en-tête principal et cartes visuelles illustrant le flux temps réel et la matrice de continuité.
+- **Emblèmes Vectoriels par Modèle & Iconographie Enrichie** : Icônes dédiées pour chaque fournisseur IA (*Anthropic*, *OpenAI*, *DeepSeek*, *Mistral*, *Meta*) et contrôles visuels enrichis.
+
+---
+
 ## [1.2.0] - 2026-11-11 — Mendel Temgoua
 
 ### Amélioré (Interface & Expérience Utilisateur)

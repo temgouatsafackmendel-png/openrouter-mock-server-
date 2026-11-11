@@ -26,6 +26,14 @@ import {
   ArrowLeftRight,
   Download,
   Plus,
+  Zap,
+  Gauge,
+  ServerOff,
+  Sliders,
+  History,
+  FileText,
+  Compass,
+  Award,
 } from 'lucide-react';
 
 interface ActivityEntry {
@@ -83,36 +91,47 @@ type SimulationBehavior = 'nominal' | 'rate_limit' | 'provider_down' | 'slow_net
 type ResponseStyle = 'default' | 'reasoning' | 'code';
 type ActivityFilter = 'all' | 'ok' | 'incident';
 
+const VISUAL_IMAGES = {
+  heroGateway: '/src/assets/images/github_banner_hero_1794405704588.jpg',
+  chaosMatrix: '/src/assets/images/preview_chaos_matrix_1794405705825.jpg',
+  streamVisual: '/src/assets/images/preview_sse_inspector_1794405706059.jpg',
+};
+
 const MODEL_OPTIONS = [
   {
     id: 'anthropic/claude-3.7-sonnet',
     label: 'Claude 3.7 Sonnet',
     provider: 'Anthropic',
     fallbackId: 'openai/gpt-4o',
+    accent: 'text-amber-500',
   },
   {
     id: 'openai/gpt-4o',
     label: 'GPT-4o',
     provider: 'OpenAI',
     fallbackId: 'anthropic/claude-3.7-sonnet',
+    accent: 'text-emerald-500',
   },
   {
     id: 'deepseek/deepseek-r1',
     label: 'DeepSeek R1',
     provider: 'Fireworks',
     fallbackId: 'anthropic/claude-3.7-sonnet',
+    accent: 'text-blue-500',
   },
   {
     id: 'mistralai/mistral-large-2411',
     label: 'Mistral Large',
     provider: 'Mistral',
     fallbackId: 'openai/gpt-4o',
+    accent: 'text-orange-500',
   },
   {
     id: 'meta-llama/llama-3.3-70b-instruct',
     label: 'Llama 3.3 70B',
     provider: 'Together AI',
     fallbackId: 'openai/gpt-4o',
+    accent: 'text-sky-500',
   },
 ];
 
@@ -130,6 +149,101 @@ const QUICK_PROMPTS = [
     text: 'Vérifie la cohérence de notre stratégie de basculement automatique entre deux régions.',
   },
 ];
+
+/**
+ * Custom Vector Emblem for each AI Provider
+ */
+function ProviderEmblem({ modelId, className = 'w-4 h-4' }: { modelId: string; className?: string }) {
+  if (modelId.startsWith('anthropic/')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+        <path d="M14 4L20 20H16.5L15.2 16.5H8.8L7.5 20H4L10 4H14Z" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (modelId.startsWith('openai/')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 4V20M4 12H20" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (modelId.startsWith('deepseek/')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+        <polygon points="12 3 21 12 12 21 3 12 12 3" strokeLinejoin="round" />
+        <circle cx="12" cy="12" r="2.5" />
+      </svg>
+    );
+  }
+  if (modelId.startsWith('mistralai/')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+        <rect x="4" y="4" width="6" height="6" rx="1" />
+        <rect x="14" y="4" width="6" height="6" rx="1" />
+        <rect x="9" y="14" width="6" height="6" rx="1" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+      <path d="M12 3L4 9V15L12 21L20 15V9L12 3Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Resilient Showcase Image with Measured Contrast Scrim & Fallback
+ */
+function VisualShowcaseCard({
+  src,
+  alt,
+  kicker,
+  title,
+  subtitle,
+  aspectClass = 'aspect-[16/9]',
+}: {
+  src: string;
+  alt: string;
+  kicker: string;
+  title: string;
+  subtitle: string;
+  aspectClass?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <div className={`relative w-full ${aspectClass} rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-800/90 bg-slate-950`}>
+      {!failed ? (
+        <img
+          src={src}
+          alt={alt}
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-950 flex items-center justify-center">
+          <Sparkles className="w-10 h-10 text-blue-400/60" />
+        </div>
+      )}
+
+      {/* Measured Scrim for Guaranteed WCAG AA Text Contrast */}
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent flex flex-col justify-end p-5">
+        <div className="text-[11px] font-medium text-blue-300 tracking-wide">
+          {kicker}
+        </div>
+        <div className="text-base font-bold text-white font-display mt-0.5">
+          {title}
+        </div>
+        <p className="text-xs text-slate-300 mt-1 max-w-md leading-relaxed">
+          {subtitle}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [activeView, setActiveView] = useState<ActiveView>('simulator');
@@ -229,6 +343,7 @@ export default function App() {
         label: modelId,
         provider: 'OpenRouter',
         fallbackId: MODEL_OPTIONS[1].id,
+        accent: 'text-blue-500',
       }
     );
   };
@@ -404,7 +519,6 @@ export default function App() {
     }
   };
 
-  // Exécute une comparaison côte à côte de deux modèles en simultané
   const runSideBySideComparison = async () => {
     const activePrompt = promptText.trim();
     if (!activePrompt) return;
@@ -478,7 +592,6 @@ export default function App() {
     setRightResult(leftResult);
   };
 
-  // Exécute un scénario visuel complet de continuité
   const runAutomaticContinuityScenario = async () => {
     setIsRunningScenario(true);
     setFailoverSteps([]);
@@ -640,7 +753,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-150">
-      {/* Top Bar Contract: Zone 1 (Brand) — Zone 2 (4 Clean Nav Links) — Zone 3 (1 Primary Action) */}
+      {/* Top Bar Contract: Strictly 3 Zones separated by gap-8 */}
       <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-[#090D16]/90 sticky top-0 z-30 backdrop-blur-md">
         <a
           href="#top"
@@ -648,7 +761,7 @@ export default function App() {
             e.preventDefault();
             setActiveView('simulator');
           }}
-          className="text-base font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0 font-display"
+          className="text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0 font-display"
         >
           OpenRouter Studio
         </a>
@@ -657,35 +770,38 @@ export default function App() {
           <button
             type="button"
             onClick={() => setActiveView('simulator')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
+            className={`py-1 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
               activeView === 'simulator'
                 ? 'text-slate-900 dark:text-white border-blue-600 dark:border-blue-500 font-semibold'
                 : 'border-transparent hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            Simulateur
+            <Compass className="w-3.5 h-3.5" />
+            <span>Simulateur</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveView('compare')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
+            className={`py-1 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
               activeView === 'compare'
                 ? 'text-slate-900 dark:text-white border-blue-600 dark:border-blue-500 font-semibold'
                 : 'border-transparent hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            Comparateur
+            <Columns2 className="w-3.5 h-3.5" />
+            <span>Comparateur</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveView('resilience')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
+            className={`py-1 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
               activeView === 'resilience'
                 ? 'text-slate-900 dark:text-white border-blue-600 dark:border-blue-500 font-semibold'
                 : 'border-transparent hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            Résilience
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Résilience</span>
           </button>
           <button
             type="button"
@@ -693,13 +809,14 @@ export default function App() {
               setActiveView('activity');
               loadActivities();
             }}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
+            className={`py-1 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer ${
               activeView === 'activity'
                 ? 'text-slate-900 dark:text-white border-blue-600 dark:border-blue-500 font-semibold'
                 : 'border-transparent hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            Activité ({activities.length})
+            <History className="w-3.5 h-3.5" />
+            <span>Activité ({activities.length})</span>
           </button>
         </nav>
 
@@ -720,182 +837,235 @@ export default function App() {
       </header>
 
       {/* Main Content Container */}
-      <main className="flex-1 w-full max-w-[1140px] mx-auto px-6 py-10 space-y-10">
-        {/* Clean Minimal Hero Header */}
-        <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-8 border-b border-slate-200/80 dark:border-slate-800/80">
-          <div className="space-y-2 max-w-2xl">
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <span>Version 1.2</span>
-              <span aria-hidden="true">·</span>
-              <span>Expérience interactive fluide</span>
-              <span aria-hidden="true">·</span>
-              <span>Réalisé par Mendel Temgoua</span>
+      <main className="flex-1 w-full max-w-[1200px] mx-auto px-6 py-9 space-y-10">
+        {/* Balanced 2-Column Editorial Hero with Visual Showcase Banner */}
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch pb-8 border-b border-slate-200/80 dark:border-slate-800/80">
+          <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>Version 1.3</span>
+                <span aria-hidden="true">·</span>
+                <span>Studio de résilience IA</span>
+                <span aria-hidden="true">·</span>
+                <span>Réalisé par Mendel Temgoua</span>
+              </div>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white font-display leading-[1.15]">
+                Simulez, comparez et éprouvez vos modèles IA avec élégance
+              </h1>
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">
+                Évaluez la réactivité de vos assistants, comparez les réponses de plusieurs fournisseurs côte à côte et vérifiez la continuité automatique de vos services.
+              </p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-display">
-              Simulez, comparez et éprouvez vos modèles IA en toute fluidité
-            </h1>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView('compare');
+                  runSideBySideComparison();
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 cursor-pointer whitespace-nowrap"
+              >
+                <Columns2 className="w-3.5 h-3.5" />
+                <span>Comparer 2 modèles en direct</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsDark((prev) => !prev)}
+                className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1523] text-xs font-medium text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex items-center gap-2 cursor-pointer whitespace-nowrap"
+              >
+                {isDark ? (
+                  <>
+                    <Sun className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Thème clair</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-3.5 h-3.5 text-slate-700" />
+                    <span>Thème sombre</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsDark((prev) => !prev)}
-            className="self-start sm:self-auto px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1523] text-xs font-medium text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex items-center gap-2 cursor-pointer whitespace-nowrap"
-          >
-            {isDark ? (
-              <>
-                <Sun className="w-3.5 h-3.5 text-amber-400" />
-                <span>Mode clair</span>
-              </>
-            ) : (
-              <>
-                <Moon className="w-3.5 h-3.5 text-slate-700" />
-                <span>Mode sombre</span>
-              </>
-            )}
-          </button>
+          <div className="lg:col-span-5 flex">
+            <VisualShowcaseCard
+              src={VISUAL_IMAGES.heroGateway}
+              alt="Architecture de simulation et routage IA"
+              kicker="Orchestration & Continuité"
+              title="Routage Multi-Modèles Déterministe"
+              subtitle="Validation instantanée de la vitesse de réponse et des scénarios de secours."
+              aspectClass="aspect-[16/10] lg:aspect-auto lg:h-full"
+            />
+          </div>
         </section>
 
         {/* ===================================================================
-            VIEW 1: CLEAN INTERACTIVE SIMULATOR WITH CONTINUOUS THREAD UX
+            VIEW 1: CLEAN INTERACTIVE SIMULATOR WITH MODEL EMBLEMS & VISUALS
         =================================================================== */}
         {activeView === 'simulator' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left Column: Simple Configuration Controls */}
-            <div className="lg:col-span-5 rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Paramètres de simulation
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBehavior('nominal');
-                    setResponseStyle('default');
-                    setCustomDelayMs(80);
-                    setSelectedModel(MODEL_OPTIONS[0].id);
-                  }}
-                  className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Réinitialiser</span>
-                </button>
-              </div>
+            {/* Left Column: Configuration Controls + Visual Card */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-white font-display">
+                      Paramètres de simulation
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBehavior('nominal');
+                      setResponseStyle('default');
+                      setCustomDelayMs(80);
+                      setSelectedModel(MODEL_OPTIONS[0].id);
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Réinitialiser</span>
+                  </button>
+                </div>
 
-              {/* Model Selection */}
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Modèle d’intelligence artificielle
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {MODEL_OPTIONS.map((m) => {
-                    const active = selectedModel === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setSelectedModel(m.id)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
-                          active
-                            ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 text-slate-900 dark:text-white'
-                            : 'border-slate-200 dark:border-slate-800/90 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <span className="text-xs font-semibold">{m.label}</span>
-                        <span className="text-xs text-slate-400">{m.provider}</span>
-                      </button>
-                    );
-                  })}
+                {/* Model Selection with Vector Emblems */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Modèle d’intelligence artificielle
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {MODEL_OPTIONS.map((m) => {
+                      const active = selectedModel === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setSelectedModel(m.id)}
+                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                            active
+                              ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/35 text-slate-900 dark:text-white'
+                              : 'border-slate-200 dark:border-slate-800/90 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2.5">
+                            <span className={m.accent}>
+                              <ProviderEmblem modelId={m.id} className="w-4 h-4" />
+                            </span>
+                            <span className="text-xs font-semibold">{m.label}</span>
+                          </span>
+                          <span className="text-xs text-slate-400">{m.provider}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Response Style Selection */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Ton et structure de réponse
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { id: 'default', label: 'Synthèse', icon: FileText },
+                        { id: 'reasoning', label: 'Structuré', icon: Compass },
+                        { id: 'code', label: 'Exemple', icon: Zap },
+                      ] as const
+                    ).map((st) => {
+                      const active = responseStyle === st.id;
+                      const IconComp = st.icon;
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setResponseStyle(st.id)}
+                          className={`px-3 py-2 rounded-xl border text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                            active
+                              ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 font-semibold'
+                              : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                          }`}
+                        >
+                          <IconComp className="w-3.5 h-3.5" />
+                          <span>{st.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Scenario Behavior Selection with Icons */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Condition de test
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        { id: 'nominal', label: 'Réponse fluide', icon: Sparkles },
+                        { id: 'rate_limit', label: 'Surcharge (Quota)', icon: Gauge },
+                        { id: 'provider_down', label: 'Panne fournisseur', icon: ServerOff },
+                        { id: 'slow_network', label: 'Réseau ralenti', icon: Clock },
+                      ] as const
+                    ).map((item) => {
+                      const active = behavior === item.id;
+                      const IconComp = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setBehavior(item.id)}
+                          className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors flex items-center gap-2 text-left cursor-pointer ${
+                            active
+                              ? 'border-blue-600 bg-blue-600 text-white'
+                              : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                          }`}
+                        >
+                          <IconComp className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Response Speed Slider */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                      Délai de réponse simulé
+                    </span>
+                    <span className="font-mono tabular-nums text-slate-900 dark:text-slate-200">
+                      {behavior === 'slow_network' ? 1800 : customDelayMs} ms
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2500}
+                    step={50}
+                    value={behavior === 'slow_network' ? 1800 : customDelayMs}
+                    onChange={(e) => {
+                      setBehavior('nominal');
+                      setCustomDelayMs(Number(e.target.value));
+                    }}
+                    className="w-full accent-blue-600"
+                  />
                 </div>
               </div>
 
-              {/* Response Style Selection */}
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Ton et structure de réponse
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      { id: 'default', label: 'Synthèse' },
-                      { id: 'reasoning', label: 'Structuré' },
-                      { id: 'code', label: 'Exemple' },
-                    ] as const
-                  ).map((st) => {
-                    const active = responseStyle === st.id;
-                    return (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => setResponseStyle(st.id)}
-                        className={`px-3 py-2 rounded-xl border text-xs font-medium transition-colors text-center cursor-pointer whitespace-nowrap ${
-                          active
-                            ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 font-semibold'
-                            : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
-                        }`}
-                      >
-                        {st.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Scenario Behavior Selection */}
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Condition de test
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      { id: 'nominal', label: 'Réponse fluide' },
-                      { id: 'rate_limit', label: 'Surcharge (Quota)' },
-                      { id: 'provider_down', label: 'Panne fournisseur' },
-                      { id: 'slow_network', label: 'Réseau ralenti' },
-                    ] as const
-                  ).map((item) => {
-                    const active = behavior === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setBehavior(item.id)}
-                        className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors text-left cursor-pointer ${
-                          active
-                            ? 'border-blue-600 bg-blue-600 text-white'
-                            : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Response Speed Slider */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-600 dark:text-slate-400 font-medium">
-                    Délai de réponse simulé
-                  </span>
-                  <span className="font-mono tabular-nums text-slate-900 dark:text-slate-200">
-                    {behavior === 'slow_network' ? 1800 : customDelayMs} ms
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={2500}
-                  step={50}
-                  value={behavior === 'slow_network' ? 1800 : customDelayMs}
-                  onChange={(e) => {
-                    setBehavior('nominal');
-                    setCustomDelayMs(Number(e.target.value));
-                  }}
-                  className="w-full accent-blue-600"
-                />
-              </div>
+              {/* Visual Illustration Card for Real-time Generation */}
+              <VisualShowcaseCard
+                src={VISUAL_IMAGES.streamVisual}
+                alt="Flux de génération temps réel"
+                kicker="Diffusion Instantanée"
+                title="Génération Fluide & Mesure de Latence"
+                subtitle="Chaque réponse est restituée en direct avec chronométrage précis à la milliseconde."
+              />
             </div>
 
             {/* Right Column: Interactive Conversation Thread & Composer */}
@@ -936,13 +1106,15 @@ export default function App() {
                 />
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    Modèle actif :{' '}
-                    <strong className="font-medium text-slate-800 dark:text-slate-200">
-                      {getModelInfo(selectedModel).label}
-                    </strong>
-                    <span className="hidden sm:inline text-slate-400">
-                      {' '}· Appuyez sur Entrée pour envoyer
+                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className={getModelInfo(selectedModel).accent}>
+                      <ProviderEmblem modelId={selectedModel} className="w-4 h-4" />
+                    </span>
+                    <span>
+                      Modèle actif :{' '}
+                      <strong className="font-semibold text-slate-800 dark:text-slate-200">
+                        {getModelInfo(selectedModel).label}
+                      </strong>
                     </span>
                   </div>
 
@@ -971,7 +1143,7 @@ export default function App() {
               </div>
 
               {/* Conversation Thread Output */}
-              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-5 min-h-[280px] flex flex-col justify-between">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-5 min-h-[320px] flex flex-col justify-between">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
                     <Sparkles className="w-4 h-4 text-blue-500" />
@@ -991,7 +1163,6 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4 flex-1 flex flex-col justify-center">
-                  {/* Live streaming turn preview */}
                   {isRunning && (
                     <div className="p-4 rounded-xl border border-blue-500/40 bg-blue-50/30 dark:bg-blue-950/20 space-y-2.5">
                       <div className="flex items-center justify-between text-xs">
@@ -1030,6 +1201,9 @@ export default function App() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                           <div className="flex items-center gap-2">
+                            <span className={fallbackModel.accent}>
+                              <ProviderEmblem modelId={turn.modelId} className="w-4 h-4" />
+                            </span>
                             <span className="font-semibold text-slate-900 dark:text-white">
                               {turn.modelLabel}
                             </span>
@@ -1049,7 +1223,7 @@ export default function App() {
 
                           <div className="flex items-center gap-3">
                             {turn.durationMs !== null && (
-                              <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 tabular-nums">
+                              <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>{turn.durationMs} ms</span>
                               </span>
@@ -1104,7 +1278,6 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* One-click instant failover recovery button */}
                             <button
                               type="button"
                               onClick={() => {
@@ -1250,11 +1423,14 @@ export default function App() {
                 return (
                   <div
                     key={idx}
-                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 flex flex-col justify-between min-h-[250px] space-y-4"
+                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 flex flex-col justify-between min-h-[260px] space-y-4"
                   >
                     <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                        <span className={modelMeta.accent}>
+                          <ProviderEmblem modelId={selectedId} className="w-4 h-4" />
+                        </span>
+                        <span className="text-sm font-semibold text-slate-900 dark:text-white font-display">
                           {modelMeta.label}
                         </span>
                         <span className="text-xs text-slate-400">
@@ -1265,8 +1441,9 @@ export default function App() {
                       {slot.durationMs !== null && (
                         <div className="flex items-center gap-2 text-xs font-mono tabular-nums">
                           {isFaster && (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium">
-                              Plus rapide ·
+                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-sans font-medium">
+                              <Award className="w-3.5 h-3.5" />
+                              <span>Plus rapide ·</span>
                             </span>
                           )}
                           <span className="text-slate-600 dark:text-slate-300">
@@ -1334,7 +1511,7 @@ export default function App() {
         )}
 
         {/* ===================================================================
-            VIEW 3: CLEAN RESILIENCE SCENARIOS WITH PROGRESS BAR
+            VIEW 3: CLEAN RESILIENCE SCENARIOS WITH ARCHITECTURAL VISUAL
         =================================================================== */}
         {activeView === 'resilience' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -1373,7 +1550,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Visual Progress Bar */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>Progression du scénario de reprise</span>
@@ -1446,91 +1622,101 @@ export default function App() {
               )}
             </div>
 
-            <div className="lg:col-span-5 rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-6">
-              <div className="space-y-1 border-b border-slate-100 dark:border-slate-800 pb-4">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Comportement global
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Ajustez la sensibilité des tests de résilience.
-                </p>
+            <div className="lg:col-span-5 space-y-6">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1523] p-6 space-y-6">
+                <div className="space-y-1 border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white font-display">
+                    Comportement global
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Ajustez la sensibilité des tests de résilience.
+                  </p>
+                </div>
+
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800">
+                    <div>
+                      <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                        Simulation d’aléas automatique
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Teste la résistance aux imprévus
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateGlobalSetting({ enabled: !globalConfig.enabled })
+                      }
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        globalConfig.enabled
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {globalConfig.enabled ? 'Activé' : 'Désactivé'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">
+                        Fréquence d’aléas simulés
+                      </span>
+                      <span className="font-mono tabular-nums text-slate-900 dark:text-white">
+                        {Math.round(globalConfig.failureProbability * 100)} %
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={globalConfig.failureProbability}
+                      onChange={(e) =>
+                        updateGlobalSetting({
+                          enabled: true,
+                          failureProbability: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-full accent-blue-600"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">
+                        Temps d’attente additionnel
+                      </span>
+                      <span className="font-mono tabular-nums text-slate-900 dark:text-white">
+                        {globalConfig.defaultLatencyMs} ms
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={3000}
+                      step={100}
+                      value={globalConfig.defaultLatencyMs}
+                      onChange={(e) =>
+                        updateGlobalSetting({
+                          enabled: true,
+                          defaultLatencyMs: Number(e.target.value),
+                        })
+                      }
+                      className="w-full accent-blue-600"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-5">
-                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800">
-                  <div>
-                    <div className="text-xs font-semibold text-slate-900 dark:text-white">
-                      Simulation d’aléas automatique
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Teste la résistance aux imprévus
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateGlobalSetting({ enabled: !globalConfig.enabled })
-                    }
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                      globalConfig.enabled
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {globalConfig.enabled ? 'Activé' : 'Désactivé'}
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-600 dark:text-slate-400 font-medium">
-                      Fréquence d’aléas simulés
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-900 dark:text-white">
-                      {Math.round(globalConfig.failureProbability * 100)} %
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={globalConfig.failureProbability}
-                    onChange={(e) =>
-                      updateGlobalSetting({
-                        enabled: true,
-                        failureProbability: parseFloat(e.target.value),
-                      })
-                    }
-                    className="w-full accent-blue-600"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-600 dark:text-slate-400 font-medium">
-                      Temps d’attente additionnel
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-900 dark:text-white">
-                      {globalConfig.defaultLatencyMs} ms
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={3000}
-                    step={100}
-                    value={globalConfig.defaultLatencyMs}
-                    onChange={(e) =>
-                      updateGlobalSetting({
-                        enabled: true,
-                        defaultLatencyMs: Number(e.target.value),
-                      })
-                    }
-                    className="w-full accent-blue-600"
-                  />
-                </div>
-              </div>
+              <VisualShowcaseCard
+                src={VISUAL_IMAGES.chaosMatrix}
+                alt="Schéma de continuité et basculement automatique"
+                kicker="Haute Disponibilité"
+                title="Basculement Automatique Inter-Fournisseurs"
+                subtitle="Maintien transparent du service grâce aux règles de secours multi-modèles."
+              />
             </div>
           </div>
         )}
@@ -1650,6 +1836,7 @@ export default function App() {
                 {filteredActivities.slice(0, 15).map((item) => {
                   const isOk = item.statusCode >= 200 && item.statusCode < 300;
                   const isWarning = item.statusCode === 429;
+                  const modelMeta = getModelInfo(item.model);
                   return (
                     <div
                       key={item.id}
@@ -1657,8 +1844,11 @@ export default function App() {
                     >
                       <div className="space-y-1 max-w-2xl">
                         <div className="flex items-center gap-2 text-xs">
+                          <span className={modelMeta.accent}>
+                            <ProviderEmblem modelId={item.model} className="w-4 h-4" />
+                          </span>
                           <span className="font-semibold text-slate-900 dark:text-white">
-                            {getModelInfo(item.model).label}
+                            {modelMeta.label}
                           </span>
                           <span aria-hidden="true" className="text-slate-400">
                             ·
@@ -1681,7 +1871,7 @@ export default function App() {
                           <span aria-hidden="true" className="text-slate-400">
                             ·
                           </span>
-                          <span className="text-slate-400 tabular-nums">
+                          <span className="text-slate-400 font-mono tabular-nums">
                             {item.latencyMs} ms
                           </span>
                         </div>
@@ -1717,9 +1907,9 @@ export default function App() {
 
       {/* Clean Minimal Footer */}
       <footer className="border-t border-slate-200/80 dark:border-slate-800/80 py-6 px-6 text-xs text-slate-500 mt-auto">
-        <div className="max-w-[1140px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="max-w-[1200px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            OpenRouter Studio v1.2 · Conçu et réalisé par Mendel Temgoua
+            OpenRouter Studio v1.3 · Conçu et réalisé par Mendel Temgoua
           </div>
           <div>Licence MIT</div>
         </div>
