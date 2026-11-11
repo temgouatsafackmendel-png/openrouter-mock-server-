@@ -5,6 +5,15 @@ Ce projet respecte le format [Keep a Changelog](https://keepachangelog.com/fr/1.
 
 ---
 
+## [1.1.0] - 2026-11-11 — Mendel Temgoua
+
+### Ajouté
+- **Comparateur Multi-Modèles en Simultané** : Exécution parallèle de deux modèles IA côte à côte sur une même demande avec mesure comparative du temps de réponse.
+- **Sélecteur de Style de Réponse** : Choix entre *Synthèse exécutive*, *Raisonnement étape par étape* et *Plan d'action* dans le simulateur, avec copie rapide en un clic.
+- **Synthèse de Performance & Recherche d'Activité** : Indicateurs de disponibilité, temps de réponse moyen et filtre instantané dans l'historique d'activité.
+
+---
+
 ## [1.0.0] - 2026-11-11 — Mendel Temgoua
 
 ### Ajouté

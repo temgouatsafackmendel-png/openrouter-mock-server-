@@ -1,7 +1,7 @@
 {
   "name": "openrouter-mock-server",
   "private": false,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Serveur local léger et déterministe émulant l'API OpenRouter (/v1/chat/completions) avec Mode Chaos, Streaming SSE et Console Inspector.",
   "author": "Mendel Temgoua <mendeltemgouabusiness@gmail.com>",
   "license": "MIT",
